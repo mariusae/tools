@@ -1,0 +1,6 @@
+
+edit: main.go
+	go build
+
+install:V:
+	GOPATH=$E go get
