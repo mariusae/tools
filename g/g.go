@@ -1,4 +1,4 @@
-package main	// import "marius.ae/tools/g"
+package main
 
 import (
 	"flag"
@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goregexp "regexp"
 	"strings"
 
 	"github.com/google/codesearch/regexp"
@@ -22,52 +23,9 @@ func usage() {
 	os.Exit(2)
 }
 
-func match1(q, p string) bool {
-	if strings.IndexAny(q, "*?[") > -1 {
-		ok, _ := filepath.Match(q, p)
-		return ok
-	} else {
-		return strings.Index(p, q) > -1
-	}
-}
-
-func match(query, path string) bool {
-	ps := strings.Split(path, "/")
-	qs := strings.Split(query, "/")
-	i := 0
-
-	for _, q := range qs[:len(qs)-1] {
-		found := false
-		for !found && i < len(ps)-1 {
-			found = match1(q, ps[i])
-			i++
-		}
-		if !found {
-			return false
-		}
-	}
-
-	p := ps[len(ps)-1]
-	q := qs[len(qs)-1]
-
-	return match1(q, p)
-}
-
 func walk(path string, g *regexp.Grep) {
 	if *vflag {
 		log.Printf("walk %s %s", path, g.Regexp)
-	}
-
-	query := "*"
-
-	if strings.Contains(path, "...") {
-		i := strings.Index(path, "...")
-		if i == 0 {
-			query = path[3:]
-			path = "."
-		} else {
-			path, query = path[0:i], path[i+3:]
-		}
 	}
 
 	paths := []string{path}
@@ -75,20 +33,19 @@ func walk(path string, g *regexp.Grep) {
 	_, err := os.Stat(path)
 	if err != nil && os.IsNotExist(err) {
 		paths = filepath.SplitList(os.Getenv("GPATH"))
-		for i := range paths {
-			paths[i] = filepath.Join(paths[i], path)
+		for i, dir := range paths {
+			paths[i] = filepath.Join(dir, path)
 		}
 	} else if err != nil {
 		// Ignore
 		return
 	}
-
 	if *vflag {
-		log.Printf("query %s; dirs: %s", query, strings.Join(paths, ","))
+		log.Printf("walk paths %v", paths)
 	}
 
-	for _, path := range paths {
-		filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+	for _, root := range paths {
+		filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 			if *vflag {
 				log.Printf("walk %s", path)
 			}
@@ -99,14 +56,14 @@ func walk(path string, g *regexp.Grep) {
 
 			if info.Mode().IsDir() {
 				switch filepath.Base(path) {
-				case ".git", ".svn", "_build":
+				case ".git", ".svn", "_build", "node_modules":
 					return filepath.SkipDir
 				default:
 					return nil
 				}
 			}
 
-			if info.Mode().IsRegular() && match(query, path) && contentOk(path) && pathOk(path) {
+			if info.Mode().IsRegular() && pathOk(path) && contentOk(path) {
 				g.File(path)
 			}
 
@@ -115,35 +72,9 @@ func walk(path string, g *regexp.Grep) {
 	}
 }
 
-func walkParents(path string, g *regexp.Grep) {
-
-	dir, err := os.Getwd()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for {
-		file := filepath.Join(dir, path)
-
-		if *vflag {
-			log.Printf("walkParents %s %s", file, g.Regexp)
-		}
-
-		if info, err := os.Stat(file); err == nil && info.Mode().IsRegular() {
-			g.File(file)
-		}
-
-		if dir == "/" {
-			break
-		}
-
-		dir = filepath.Dir(dir)
-	}
-}
-
 func pathOk(path string) bool {
 	switch filepath.Ext(path) {
-	case ".lst", ".asm", ".rst", ".sym", ".rel":
+	case ".lst", ".asm", ".rst", ".sym", ".rel", ".map":
 		return false
 	default:
 		return true
@@ -151,6 +82,11 @@ func pathOk(path string) bool {
 }
 
 func contentOk(path string) bool {
+	switch filepath.Ext(path) {
+	case ".a", ".pkg":
+		return false
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		return false
@@ -211,15 +147,30 @@ func main() {
 		walk(".", &g)
 	} else {
 		for _, path := range args[1:] {
-			if strings.HasPrefix(path, "~") {
-				walkParents(path[1:], &g)
-			} else {
-				walk(path, &g)
-			}
+			walk(path, &g)
 		}
 	}
 
 	if !g.Match {
 		os.Exit(1)
+	}
+}
+
+// from cmd/go/main.go
+
+// matchPattern(pattern)(name) reports whether
+// name matches pattern.  Pattern is a limited glob
+// pattern in which '...' means 'any string' and there
+// is no other special syntax.
+func matchPattern(pattern string) func(name string) bool {
+	re := goregexp.QuoteMeta(pattern)
+	re = strings.Replace(re, `\.\.\.`, `.*`, -1)
+	// Special case: foo/... matches foo too.
+	if strings.HasSuffix(re, `/.*`) {
+		re = re[:len(re)-len(`/.*`)] + `(/.*)?`
+	}
+	reg := goregexp.MustCompile(`^` + re + `$`)
+	return func(name string) bool {
+		return reg.MatchString(name)
 	}
 }
