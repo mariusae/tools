@@ -1,4 +1,4 @@
-package main	// import "marius.ae/tools/run"
+package main 
 
 import (
 	"flag"
@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -20,6 +21,7 @@ import (
 //var printFlag = flag.Bool("p", false, "Print full command being executed")
 var labelFlag = flag.String("l", "", "Label")
 var nodirFlag = flag.Bool("n", false, "Prefix title with current working directory")
+var cwd = flag.String("d", "", "dir")
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: run command..")
@@ -39,32 +41,41 @@ func main() {
 		usage()
 	}
 
-	wid, err := strconv.Atoi(os.Getenv("winid"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	w, err := acme.Open(wid, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	bytes, err := w.ReadAll("tag")
-	if err != nil {
-		log.Fatal(err)
-	}
+	var dir string
 
-	f := strings.Fields(string(bytes))
-	if len(f) == 0 {
-		log.Fatal("bad tag")
-	}
+	if *cwd != "" {
+		dir = *cwd
+	} else {
+		wid, err := strconv.Atoi(os.Getenv("winid"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		w, err := acme.Open(wid, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		bytes, err := w.ReadAll("tag")
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	dir := path.Dir(f[0])
+		f := strings.Fields(string(bytes))
+		if len(f) == 0 {
+			log.Fatal("bad tag")
+		}
+
+		dir = path.Dir(f[0])
+	}
 
 	//	wname := "$" + path.Clean(flag.Arg(0))
-	wname := "+" + path.Clean(flag.Arg(0))
+	argpath := path.Clean(flag.Arg(0))
+	_, argpath = filepath.Split(argpath)
+	wname := "+" + argpath
 	if *labelFlag != "" {
 		wname = "+" + *labelFlag
 	}
-	w = nil
+
+	var w *acme.Win
 
 	windows, _ := acme.Windows()
 	for _, info := range windows {
