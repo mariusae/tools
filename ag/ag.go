@@ -1,7 +1,7 @@
 // Ag searches open Acme windows for a regular expression, printing
 // results in the manner of grep so that they are B3-clickable inside
 // of Acme.
-package main
+package main // import "marius.ae/tools/ag"
 
 import (
 	"bytes"

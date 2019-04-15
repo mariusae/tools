@@ -1,4 +1,4 @@
-package main	// import "marius.ae/tools/relativize"
+package main // import "marius.ae/tools/relativize"
 
 /*
 

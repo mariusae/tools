@@ -1,4 +1,4 @@
-package main	// import "marius.ae/tools/fmt2"
+package main // import "marius.ae/tools/fmt2"
 
 import (
 	"flag"
