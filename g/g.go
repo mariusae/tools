@@ -56,7 +56,7 @@ func walk(path string, g *regexp.Grep) {
 
 			if info.Mode().IsDir() {
 				switch filepath.Base(path) {
-				case ".git", ".svn", "_build", "node_modules":
+				case ".git", ".svn", "_build", "node_modules", ".mypy_cache":
 					return filepath.SkipDir
 				default:
 					return nil

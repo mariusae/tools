@@ -79,14 +79,7 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			xxx := false //  root == "/Users/marius/w" // false // strings.HasPrefix(relpath, "model")
-			if xxx {
-				log.Printf("xxx %v", relpath)
-			}
 			if info.IsDir() && !dirprefix(relpath) {
-				if xxx {
-					log.Printf("xxx skip")
-				}
 				return filepath.SkipDir
 			}
 

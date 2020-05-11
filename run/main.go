@@ -26,7 +26,7 @@ var cwd = flag.String("d", "", "dir")
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: run command..")
 	fmt.Fprintln(os.Stderr, "options:")
-	//	flag.PrintDefaults()
+	flag.PrintDefaults()
 
 	os.Exit(2)
 }
@@ -126,7 +126,7 @@ func main() {
 	}
 
 	w.Ctl("cleartag")
-	w.Fprintf("tag", " Kill")
+	w.Fprintf("tag", " Kill QUIT")
 
 	done := make(chan bool)
 	go func() {
@@ -151,6 +151,9 @@ func main() {
 					continue
 				case "Kill":
 					syscall.Kill(-cmd.Process.Pid, 2)
+					continue
+				case "QUIT":
+					syscall.Kill(-cmd.Process.Pid, syscall.SIGQUIT)
 					continue
 				}
 			}
