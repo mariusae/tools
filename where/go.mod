@@ -1,4 +1,4 @@
-module marius.ae/tools/where
+module github.com/mariusae/tools/where
 
 go 1.13
 

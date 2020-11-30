@@ -1,4 +1,4 @@
-module marius.ae/tools/upsnarf
+module github.com/mariusae/tools/upsnarf
 
 go 1.12
 
