@@ -1,4 +1,4 @@
-package main // import "marius.ae/tools/g"
+package main 
 
 import (
 	"flag"

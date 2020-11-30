@@ -1,4 +1,4 @@
-package main // import "marius.ae/tools/trim"
+package main 
 
 import (
 	"bufio"

@@ -1,4 +1,4 @@
-package main	// import "marius.ae/tools/upsnarf"
+package main	
 
 import (
 	"path/filepath"

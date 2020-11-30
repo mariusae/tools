@@ -1,4 +1,4 @@
-package main // import "marius.ae/tools/tabulate"
+package main 
 
 import (
 	"bufio"

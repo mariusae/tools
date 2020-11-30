@@ -1,4 +1,4 @@
-package main // import "marius.ae/tools/f"
+package main 
 
 import (
 	"bufio"

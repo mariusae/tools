@@ -1,4 +1,4 @@
-package main // import "marius.ae/tools/dur2s"
+package main 
 
 import (
 	"bufio"
