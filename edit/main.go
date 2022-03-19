@@ -1,4 +1,4 @@
-package main 
+package main
 
 import (
 	"flag"
@@ -98,8 +98,12 @@ func main() {
 		os.Exit(0)
 	}
 
-	for filepath := range matches {
-		plumb(filepath, "")
+	for file := range matches {
+		file, err := filepath.Abs(file)
+		if err != nil {
+			log.Fatal(err)
+		}
+		plumb(file, "")
 	}
 }
 
