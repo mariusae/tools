@@ -1,0 +1,13 @@
+[package]
+name = "editx"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+walkdir = "2"
+regex = "1"
+anyhow = "1"
+clap = "4"
+either = "1"
+log = "0"
+env_logger = "0"
