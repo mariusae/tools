@@ -1,4 +1,5 @@
 
+use crate::pattern::Component;
 use crate::pattern::Pattern;
 use std::borrow::Cow;
 use std::fs;
@@ -7,6 +8,16 @@ use std::iter;
 use std::path::Path;
 use std::path::PathBuf;
 use walkdir::WalkDir;
+
+macro_rules! error_iter {
+    // This pattern allows for a format string with arguments
+    ($fmt:expr, $($arg:tt)*) => {
+        Box::new(iter::from_fn(move || {
+            println!($fmt, $($arg)*);
+            None
+        }).fuse())
+    };
+}
 
 #[derive(Debug)]
 pub(crate) struct Eval<'a> {
@@ -25,63 +36,97 @@ impl<'a> Eval<'a> {
     pub fn eval_to_iter(&self) -> Box<dyn Iterator<Item = PathBuf> + 'a> {
         log::debug!("eval_to_iter {:?}", self);
         match &self.pattern {
-            Pattern::Dir(path, ref next) => {
-                let path = self.path.join(path);
+            Pattern::Dir(Component::Full(ref elem), ref next) => {
+                let path = self.path.join(elem);
                 match fs::metadata(&path) {
-                    Result::Ok(meta) if meta.is_dir() => Self {
+                    Ok(meta) if meta.is_dir() => Self {
                         path: Cow::Owned(path),
                         pattern: next,
                     }
                     .eval_to_iter(),
-                    Result::Ok(_) => Box::new(iter::empty()),
+                    Ok(_) => Box::new(iter::empty()),
                     Err(err) if err.kind() == io::ErrorKind::NotFound => Box::new(iter::empty()),
-                    Err(err) => Box::new({
-                        iter::from_fn(move || {
-                            eprintln!("skipped {:?}: stat: {:?}", path, err);
-                            None
-                        })
-                        .fuse()
-                    }),
+                    Err(err) => error_iter!("skipped {:?}: stat: {:?}", path, err),
                 }
             }
-            Pattern::File(path) => {
-                let path = self.path.join(path);
+            Pattern::Dir(ref glob, ref next) => {
+                let cloned_path = self.path.clone();
+                let cloned_glob = glob.clone();
+                match fs::read_dir(&self.path.clone()) {
+                    Err(err) => error_iter!("skipped {:?}: stat: {:?}", cloned_path, err),
+                    // TODO: check is file
+                    Ok(read_dir) => Box::new(read_dir.flat_map(move |entry| {
+                        match entry {
+                            Err(err) => {
+                                eprintln!("read_dir {:?}: skipped entry: {:?}", cloned_path, err);
+                                Box::new(iter::empty())
+                            }
+                            // TODO: check is dir
+                            Ok(entry) if cloned_glob.matches(entry.path().to_str().unwrap()) => {
+                                Self {
+                                    path: Cow::Owned(entry.path()),
+                                    pattern: next,
+                                }
+                                .eval_to_iter()
+                            }
+                            Ok(_) => Box::new(iter::empty()),
+                        }
+                    })),
+                }
+            }
+            Pattern::File(Component::Full(ref elem)) => {
+                let path = self.path.join(elem);
                 match fs::metadata(&path) {
-                    Result::Ok(meta) if meta.is_file() => Box::new(iter::once(path)),
-                    Result::Ok(_) => Box::new(iter::empty()),
+                    Ok(meta) if meta.is_file() => Box::new(iter::once(path)),
+                    Ok(_) => Box::new(iter::empty()),
                     Err(err) if err.kind() == io::ErrorKind::NotFound => Box::new(iter::empty()),
-                    Err(err) => Box::new(
-                        iter::from_fn(move || {
-                            eprintln!("skipped {:?}: stat: {:?}", path, err);
+                    Err(err) => error_iter!("skipped {:?}: stat: {:?}", path, err),
+                }
+            }
+            Pattern::File(ref glob) => {
+                let cloned_path = self.path.clone();
+                let cloned_glob = glob.clone();
+                match fs::read_dir(&self.path.clone()) {
+                    Err(err) => error_iter!("skipped {:?}: stat: {:?}", cloned_path, err),
+                    // TODO: check is file
+                    Ok(read_dir) => Box::new(read_dir.flat_map(move |entry| match entry {
+                        Err(err) => {
+                            eprintln!("read_dir {:?}: skipped entry: {:?}", cloned_path, err);
                             None
-                        })
-                        .fuse(),
-                    ),
+                        }
+                        Ok(entry) if cloned_glob.matches(entry.path().to_str().unwrap()) => {
+                            Some(entry.path())
+                        }
+                        Ok(_) => None,
+                    })),
                 }
             }
             Pattern::Recurse(next) => match &**next {
                 Pattern::Recurse(_) => panic!("invalid pattern"),
-                Pattern::File(file_name) => Box::new(
+                Pattern::File(component) => Box::new(
                     WalkDir::new(&self.path)
                         .into_iter()
                         .filter_map(move |e| match e {
-                            Result::Err(err) => {
+                            Err(err) => {
                                 eprintln!("skipped while walking: stat: {:?}", err);
                                 None
                             }
-                            Result::Ok(e) if e.file_name() == file_name => Some(e.into_path()),
-                            Result::Ok(_) => None,
+                            Ok(e) if component.matches(e.file_name().to_str().unwrap()) => {
+                                Some(e.into_path())
+                            }
+                            Ok(_) => None,
                         }),
                 ),
-                Pattern::Dir(dir_name, next) => {
+                Pattern::Dir(component, next) => {
                     Box::new(WalkDir::new(&self.path).into_iter().flat_map(move |e| {
                         match e {
-                            Result::Err(err) => {
+                            Err(err) => {
                                 eprintln!("skipped while walking: stat: {:?}", err);
                                 Box::new(iter::empty())
                             }
-                            Result::Ok(e)
-                                if e.file_type().is_dir() && e.file_name() == dir_name =>
+                            Ok(e)
+                                if e.file_type().is_dir()
+                                    && component.matches(e.file_name().to_str().unwrap()) =>
                             {
                                 Eval {
                                     path: Cow::Owned(e.into_path()),
@@ -89,7 +134,7 @@ impl<'a> Eval<'a> {
                                 }
                                 .eval_to_iter()
                             }
-                            Result::Ok(_) => Box::new(iter::empty()),
+                            Ok(_) => Box::new(iter::empty()),
                         }
                     }))
                 }

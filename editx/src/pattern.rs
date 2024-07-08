@@ -7,24 +7,68 @@ use std::iter::Peekable;
 use std::path::PathBuf;
 
 #[derive(Debug, PartialEq, Clone)]
+pub(crate) enum Component {
+    Full(String),
+    Prefix(String),
+    Suffix(String),
+    Everything,
+    Nothing,
+}
+
+impl Component {
+    pub fn matches(&self, s: &str) -> bool {
+        match self {
+            Component::Full(full) => s == full,
+            Component::Prefix(prefix) => s.starts_with(prefix),
+            Component::Suffix(suffix) => s.ends_with(suffix),
+            Component::Everything => true,
+            Component::Nothing => false,
+        }
+    }
+
+    fn parse(component: &str) -> Component {
+        if component.len() == 0 {
+            return Component::Nothing;
+        }
+
+        let chars: Vec<char> = component.chars().collect();
+
+        if chars[0] == '*' {
+            if chars.len() == 1 {
+                Component::Everything
+            } else {
+                Component::Suffix(chars[1..].iter().collect())
+            }
+        } else if chars[chars.len() - 1] == '*' {
+            Component::Prefix(chars[..chars.len() - 1].iter().collect())
+        } else {
+            Component::Full(chars.iter().collect())
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) enum Pattern {
-    Dir(PathBuf, Box<Pattern>),
-    File(PathBuf),
+    Dir(Component, Box<Pattern>),
+    File(Component),
     Recurse(Box<Pattern>),
 }
 
 impl Pattern {
     pub fn parse(pat: &str) -> Result<Pattern> {
-        Self::parse_(Lexer::new(pat).peekable())
+        Self::parse_pattern(Lexer::new(pat).peekable())
     }
 
-    fn parse_(mut tokens: Peekable<Lexer>) -> Result<Pattern> {
+    fn parse_pattern(mut tokens: Peekable<Lexer>) -> Result<Pattern> {
         match tokens.next() {
-            Some(Token::Ellipsis) => Ok(Pattern::Recurse(Box::new(Self::parse_(tokens)?))),
-            Some(Token::Elem(elem)) if tokens.peek().is_none() => Ok(Pattern::File(elem.into())),
-            Some(Token::Elem(elem)) => {
-                Ok(Pattern::Dir(elem.into(), Box::new(Self::parse_(tokens)?)))
+            Some(Token::Ellipsis) => Ok(Pattern::Recurse(Box::new(Self::parse_pattern(tokens)?))),
+            Some(Token::Elem(elem)) if tokens.peek().is_none() => {
+                Ok(Pattern::File(Component::parse(elem)))
             }
+            Some(Token::Elem(elem)) => Ok(Pattern::Dir(
+                Component::parse(elem),
+                Box::new(Self::parse_pattern(tokens)?),
+            )),
             _ => bail!("unexpected end of pattern"),
         }
     }
@@ -34,6 +78,7 @@ impl Pattern {
 enum Token<'a> {
     Elem(&'a str),
     Ellipsis,
+    Star,
 }
 
 struct Lexer<'a> {
@@ -57,6 +102,7 @@ impl<'a> Iterator for Lexer<'a> {
                 None => return None,
                 Some("/") => continue,
                 Some("...") => return Some(Token::Ellipsis),
+                Some("*") => return Some(Token::Star),
                 Some(elem) => return Some(Token::Elem(elem)),
             }
         }
@@ -128,16 +174,32 @@ mod tests {
     }
 
     #[test]
+    fn test_component_parse() {
+        assert_eq!(Component::parse("*bar"), Component::Suffix("bar".into()));
+        assert_eq!(Component::parse("bar*"), Component::Prefix("bar".into()));
+        assert_eq!(Component::parse("bar"), Component::Full("bar".into()));
+    }
+
+    #[test]
+    fn test_component_match() {
+        let component = Component::parse("*bar");
+        assert!(component.matches("foobar"));
+        assert!(component.matches("bar"));
+        assert!(!component.matches("baz"));
+        assert!(!component.matches("foobarb"));
+    }
+
+    #[test]
     fn basic_parse() {
         assert_eq!(
             Pattern::parse("hello...foo...bar/baz").unwrap(),
             Pattern::Dir(
-                "hello".into(),
+                Component::Full("hello".into()),
                 Box::new(Pattern::Recurse(Box::new(Pattern::Dir(
-                    "foo".into(),
+                    Component::Full("foo".into()),
                     Box::new(Pattern::Recurse(Box::new(Pattern::Dir(
-                        "bar".into(),
-                        Box::new(Pattern::File("baz".into()))
+                        Component::Full("bar".into()),
+                        Box::new(Pattern::File(Component::Full("baz".into())))
                     ))))
                 ))))
             )
@@ -148,7 +210,7 @@ mod tests {
     fn parse_ellipsis() {
         assert_eq!(
             Pattern::parse("...bar.foo").unwrap(),
-            Pattern::Recurse(Box::new(Pattern::File("bar.foo".into())))
+            Pattern::Recurse(Box::new(Pattern::File(Component::Full("bar.foo".into()))))
         );
     }
 
